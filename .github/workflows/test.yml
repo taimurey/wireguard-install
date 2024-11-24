@@ -1,0 +1,115 @@
+name: Test WireGuard Installation
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    if: github.repository == 'taimurey/wireguard-install'
+    strategy:
+      matrix:
+        os-image:
+          - ubuntu-22-04-x64
+          - ubuntu-24-04-x64
+          - debian-11-x64
+          - debian-12-x64
+          - fedora-39-x64
+          - fedora-40-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup DigitalOcean CLI
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Create Test Server
+        run: doctl compute droplet create wireguard-test-$GITHUB_RUN_ID-${{ matrix.os-image }} --size s-1vcpu-1gb --image ${{ matrix.os-image }} --region lon1 --enable-ipv6 --ssh-keys ${{ secrets.SSH_KEY_FINGERPRINT }} --wait
+
+      - name: Get Server ID
+        run: echo "SERVER_ID=$(doctl compute droplet list -o json | jq -r '.[] | select(.name == "wireguard-test-$GITHUB_RUN_ID-${{ matrix.os-image }}").id')" >> $GITHUB_ENV
+
+      - name: Move Server to Project
+        if: env.SERVER_ID != ''
+        run: doctl projects resources assign ${{ secrets.DIGITALOCEAN_PROJECT_ID }} --resource=do:droplet:${{ env.SERVER_ID }}
+
+      - name: Wait for Server Boot
+        run: sleep 90
+
+      - name: Get Server IP
+        run: echo "SERVER_IP=$(doctl compute droplet list -o json | jq -r '.[] | select(.name == "wireguard-test-$GITHUB_RUN_ID-${{ matrix.os-image }}").networks.v4 | .[] | select(.type == "public").ip_address')" >> $GITHUB_ENV
+
+      - name: Get Server OS Type
+        run: echo "SERVER_OS=$(echo ${{ matrix.os-image }} | cut -d '-' -f1)" >> $GITHUB_ENV
+
+      - name: Setup Debian/Ubuntu Server
+        if: env.SERVER_OS == 'debian' || env.SERVER_OS == 'ubuntu'
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -x
+            apt-get update
+            apt-get install -y git
+
+      - name: Setup Fedora Server
+        if: env.SERVER_OS == 'fedora'
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -x
+            dnf install -y git
+
+      - name: Clone and Setup Repository
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -x
+            git clone https://github.com/taimurey/wireguard-install.git
+            cd wireguard-install
+            git checkout ${{ github.sha }}
+            chmod +x wireguard-manager.sh
+
+      - name: Test WireGuard Installation
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ env.SERVER_IP }}
+          username: root
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -x
+            cd wireguard-install
+            # Automated test responses
+            echo "testadmin" > /tmp/answers
+            echo "testpass" >> /tmp/answers
+            echo "testpass" >> /tmp/answers
+            echo "2" >> /tmp/answers  # Number of peers to create
+
+            # Run the script with automated input
+            cat /tmp/answers | ./wireguard-manager.sh
+
+            # Verify installation
+            if docker ps | grep -q wireguard; then
+              echo "Success: WireGuard is running"
+              exit 0
+            else
+              echo "Failure: WireGuard is not running"
+              exit 1
+            fi
+
+      - name: Cleanup Test Server
+        if: always()
+        run: doctl compute droplet delete -f wireguard-test-$GITHUB_RUN_ID-${{ matrix.os-image }}
