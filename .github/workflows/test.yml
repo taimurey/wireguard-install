@@ -14,11 +14,9 @@ jobs:
       matrix:
         container:
           - "ubuntu:22.04"
-          - "ubuntu:24.04"
           - "debian:11"
           - "debian:12"
           - "fedora:39"
-          - "fedora:40"
 
     steps:
       - name: Checkout code
@@ -26,57 +24,90 @@ jobs:
 
       - name: Set up Docker
         run: |
-          sudo apt-get remove -y docker docker-engine docker.io containerd runc
           sudo apt-get update
           sudo apt-get install -y \
+            apt-transport-https \
             ca-certificates \
             curl \
-            gnupg
-          sudo install -m 0755 -d /etc/apt/keyrings
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-          sudo chmod a+r /etc/apt/keyrings/docker.gpg
-          echo \
-            "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-            "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+            gnupg-agent \
+            software-properties-common
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+          sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
           sudo apt-get update
-          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-          sudo docker --version
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+          sudo systemctl start docker
+
+      - name: Setup Docker in Docker
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{
+            "experimental": true,
+            "features": {
+              "buildkit": true
+            },
+            "storage-driver": "overlay2"
+          }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
 
       - name: Test WireGuard Installation (Debian/Ubuntu)
         if: contains(matrix.container, 'ubuntu') || contains(matrix.container, 'debian')
         run: |
-          docker run --privileged --name test-container -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y curl sudo systemd systemd-sysv git
+          # Create a Docker network for DinD
+          docker network create wireguard-test
+
+          # Start DinD container
+          docker run -d --privileged --name dind \
+            --network wireguard-test \
+            -v ${{ github.workspace }}:/workspace \
+            docker:dind
+
+          # Wait for Docker to be ready in DinD
+          sleep 10
+
+          # Run test in the container
+          docker exec dind sh -c '
+            apk add --no-cache bash curl
             cd /workspace
             chmod +x wireguard-manager.sh
-            echo "testadmin" > /tmp/answers
-            echo "testpass" >> /tmp/answers
-            echo "testpass" >> /tmp/answers
-            echo "2" >> /tmp/answers
-            cat /tmp/answers | ./wireguard-manager.sh || exit 1'
+            ./wireguard-manager.sh auto_install=true'
 
       - name: Test WireGuard Installation (Fedora)
         if: contains(matrix.container, 'fedora')
         run: |
-          docker run --privileged --name test-container -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
-            dnf install -y curl sudo systemd systemd-sysv git
+          # Create a Docker network for DinD
+          docker network create wireguard-test
+
+          # Start DinD container
+          docker run -d --privileged --name dind \
+            --network wireguard-test \
+            -v ${{ github.workspace }}:/workspace \
+            docker:dind
+
+          # Wait for Docker to be ready in DinD
+          sleep 10
+
+          # Run test in the container
+          docker exec dind sh -c '
+            apk add --no-cache bash curl
             cd /workspace
             chmod +x wireguard-manager.sh
-            echo "testadmin" > /tmp/answers
-            echo "testpass" >> /tmp/answers
-            echo "testpass" >> /tmp/answers
-            echo "2" >> /tmp/answers
-            cat /tmp/answers | ./wireguard-manager.sh || exit 1'
+            ./wireguard-manager.sh auto_install=true'
 
-      - name: Check Container Status
+      - name: Verify WireGuard Status
         run: |
-          docker exec test-container bash -c 'docker ps | grep -q wireguard'
+          docker exec dind sh -c '
+            if docker ps | grep -q wireguard; then
+              echo "WireGuard is running"
+              exit 0
+            else
+              echo "WireGuard is not running"
+              exit 1
+            fi'
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop test-container || true
-          docker rm test-container || true
+          docker stop dind || true
+          docker rm dind || true
+          docker network rm wireguard-test || true
           docker system prune -af

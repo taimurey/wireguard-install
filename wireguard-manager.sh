@@ -6,6 +6,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Add this at the beginning of your script
+AUTO_INSTALL=${1:-false}
+
 # Logging configuration
 LOG_FILE="/var/log/wireguard-manager.log"
 print_message() { echo -e "${GREEN}[+] $1${NC}" | tee -a "$LOG_FILE"; }
