@@ -1,6 +1,7 @@
 # wireguard-install
 
 ![Test](https://github.com/taimurey/wireguard-install/workflows/Test/badge.svg)
+![Lint](https://github.com/taimurey/wireguard-install/workflows/Lint/badge.svg)
 
 WireGuard installer for Debian, Ubuntu, and Fedora. This script automates the installation and configuration of a WireGuard VPN server in just a few minutes.
 
