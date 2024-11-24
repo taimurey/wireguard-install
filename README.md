@@ -2,27 +2,20 @@
 
 ![Test](https://github.com/taimurey/wireguard-install/workflows/Test/badge.svg)
 
-WireGuard installer for Debian, Ubuntu, and Fedora. This script automates the installation and configuration of a WireGuard VPN server, making it easy to set up your own secure VPN in just a few minutes.
+WireGuard installer for Debian, Ubuntu, and Fedora. This script automates the installation and configuration of a WireGuard VPN server in just a few minutes.
 
 ## Features
 
-- 🚀 One-click WireGuard server installation
-- 🔒 Docker-based deployment for enhanced security and isolation
-- 👥 Easy peer management (add/revoke)
-- 📱 Mobile-friendly (QR codes for phone configs)
-- 🔄 Automatic updates and security patches
-- 📝 Comprehensive logging
-- 🔐 Secure configuration with automatic backups
-- 🌐 IPv4 and IPv6 support
-- 🛡️ Automatic firewall configuration
-- 💾 Configuration backup system
-
-## Prerequisites
-
-- A Linux server (Debian/Ubuntu/Fedora)
-- Root access or sudo privileges
-- Port 51820/UDP open on your firewall
-- Docker and Docker Compose (auto-installed by script)
+- Automated WireGuard server installation and configuration
+- Docker-based deployment for enhanced isolation
+- Comprehensive peer management system
+- Mobile and desktop client support
+- Automatic updates and security patches
+- Built-in logging and monitoring
+- Secure configuration with automatic backups
+- IPv4 and IPv6 support
+- Automated firewall configuration
+- Backup and restore functionality
 
 ## Usage
 
@@ -40,13 +33,15 @@ Then run it:
 sudo ./wireguard-manager.sh
 ```
 
+You need to run the script as root and have Docker installed (the script will install it if missing).
+
 The first time you run it, you'll have to:
 
 1. Create an admin user
 2. Set up initial configuration
 3. Choose number of peer configurations to create
 
-When WireGuard is installed, running the script again gives you these options:
+When WireGuard is installed, you can run the script again, and you will get the choice to:
 
 - Add a new peer
 - Revoke existing peer
@@ -67,15 +62,15 @@ The script supports these Linux distributions:
 
 Notes:
 
-- 🤖 indicates distributions that are regularly tested in CI
+- The script is regularly tested against distributions marked with 🤖
 - Only `amd64` architecture is officially supported
-- Script requires `systemd` and `docker`
+- The script requires `systemd` and `docker`
 
 ## Client Setup
 
 ### Windows
 
-1. Download [WireGuard](https://www.wireguard.com/install/)
+1. Download WireGuard from [wireguard.com/install](https://www.wireguard.com/install/)
 2. Import the peer configuration file
 3. Click "Activate"
 
@@ -116,38 +111,38 @@ sudo systemctl enable --now wg-quick@wg0
 
 ## Security Features
 
-- Docker container isolation
-- Automatic security updates
+- Container-based isolation through Docker
+- Automated security updates
 - Secure peer configuration storage
-- Backup system for configurations
-- Regular security audits via GitHub Actions
-- No root access after initial setup
+- Configuration backup system
+- Continuous integration testing
+- Unprivileged operation
 
 ## Troubleshooting
 
-1. Check container status:
+1. Container Status:
 
 ```bash
 docker ps
 docker logs wireguard
 ```
 
-2. Verify port is open:
+2. Port Verification:
 
 ```bash
 sudo lsof -i :51820
 ```
 
-3. Check server connectivity:
+3. Server Connectivity:
 
 ```bash
 curl ifconfig.me
 ```
 
-4. Test for DNS leaks:
+4. DNS Leak Testing:
 
 - Visit https://dnsleaktest.com/
-- Ensure your IP matches the server IP
+- Verify IP matches server IP
 
 ## Contributing
 
@@ -163,30 +158,31 @@ Please open an issue first for major changes.
 
 **Q:** Which VPS providers do you recommend?
 
-**A:** These providers work well with WireGuard:
+**A:** The following providers work well with WireGuard:
 
-- [DigitalOcean](https://m.do.co/c/YOUR_REF_CODE)
-- [Vultr](https://vultr.com)
-- [Hetzner](https://hetzner.com)
-
----
-
-**Q:** How many peers can I create?
-
-**A:** The script allows unlimited peers, but consider your server's resources. A typical setup can easily handle 50+ peers.
+- [Vultr](https://vultr.com): Worldwide locations, IPv6 support, starting at $5/month
+- [Hetzner](https://hetzner.com): Germany, Finland and USA locations, starting at 4.5€/month
+- [DigitalOcean](https://digitalocean.com): Global infrastructure, starting at $4/month
 
 ---
 
-**Q:** Is WireGuard better than OpenVPN?
+**Q:** What is the recommended number of peers per server?
 
-**A:** WireGuard is generally:
+**A:** While WireGuard can handle many connections efficiently, consider your server's resources. A typical setup can manage 50+ peers comfortably on minimal hardware.
 
-- Faster (better performance)
-- Simpler (less code, fewer potential vulnerabilities)
-- More modern (newer cryptography)
-- Easier to audit (smaller codebase)
+---
 
-However, choose based on your specific needs.
+**Q:** Why use WireGuard over OpenVPN?
+
+**A:** WireGuard provides:
+
+- Superior performance
+- Simpler codebase (easier to audit)
+- Modern cryptography
+- Lower overhead
+- Faster connection establishment
+
+However, choose based on your specific requirements.
 
 ## License
 
@@ -194,8 +190,8 @@ This project is under the MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- [WireGuard](https://www.wireguard.com/) for the excellent VPN protocol
-- [LinuxServer.io](https://linuxserver.io/) for the Docker image
+- WireGuard project for the protocol
+- LinuxServer.io for the Docker image
 - All contributors and testers
 
 ## Star History
