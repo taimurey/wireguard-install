@@ -26,36 +26,41 @@ jobs:
 
       - name: Set up Docker
         run: |
+          sudo apt-get remove -y docker docker-engine docker.io containerd runc
           sudo apt-get update
-          sudo apt-get install -y docker.io
-          sudo systemctl start docker
-          docker --version
+          sudo apt-get install -y \
+            ca-certificates \
+            curl \
+            gnupg
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+          echo \
+            "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+            "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          sudo docker --version
 
       - name: Test WireGuard Installation (Debian/Ubuntu)
         if: contains(matrix.container, 'ubuntu') || contains(matrix.container, 'debian')
         run: |
-          docker run --privileged -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
+          docker run --privileged --name test-container -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
             apt-get update
-            apt-get install -y curl sudo systemd systemd-sysv git
+            DEBIAN_FRONTEND=noninteractive apt-get install -y curl sudo systemd systemd-sysv git
             cd /workspace
             chmod +x wireguard-manager.sh
             echo "testadmin" > /tmp/answers
             echo "testpass" >> /tmp/answers
             echo "testpass" >> /tmp/answers
             echo "2" >> /tmp/answers
-            cat /tmp/answers | ./wireguard-manager.sh
-            if docker ps | grep -q wireguard; then
-              echo "Success: WireGuard is running"
-              exit 0
-            else
-              echo "Failure: WireGuard is not running"
-              exit 1
-            fi'
+            cat /tmp/answers | ./wireguard-manager.sh || exit 1'
 
       - name: Test WireGuard Installation (Fedora)
         if: contains(matrix.container, 'fedora')
         run: |
-          docker run --privileged -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
+          docker run --privileged --name test-container -v ${{ github.workspace }}:/workspace ${{ matrix.container }} /bin/bash -c '
             dnf install -y curl sudo systemd systemd-sysv git
             cd /workspace
             chmod +x wireguard-manager.sh
@@ -63,16 +68,15 @@ jobs:
             echo "testpass" >> /tmp/answers
             echo "testpass" >> /tmp/answers
             echo "2" >> /tmp/answers
-            cat /tmp/answers | ./wireguard-manager.sh
-            if docker ps | grep -q wireguard; then
-              echo "Success: WireGuard is running"
-              exit 0
-            else
-              echo "Failure: WireGuard is not running"
-              exit 1
-            fi'
+            cat /tmp/answers | ./wireguard-manager.sh || exit 1'
+
+      - name: Check Container Status
+        run: |
+          docker exec test-container bash -c 'docker ps | grep -q wireguard'
 
       - name: Cleanup
         if: always()
         run: |
+          docker stop test-container || true
+          docker rm test-container || true
           docker system prune -af
