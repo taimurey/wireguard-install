@@ -171,8 +171,8 @@ revoke_peer() {
     
     if [ ! -d "/opt/wireguard-server/config/peer$peer_num" ]; then
         print_error "Peer $peer_num not found"
-        return
-    }
+        return 1
+    fi  # Changed '}' to 'fi' for if statement
     
     print_message "Revoking peer$peer_num..."
     echo "Revoking peer$peer_num at $(date)" >> "$LOG_FILE"
