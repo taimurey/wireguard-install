@@ -15,30 +15,59 @@ print_message() { echo -e "${GREEN}[+] $1${NC}" | tee -a "$LOG_FILE"; }
 print_error() { echo -e "${RED}[-] $1${NC}" | tee -a "$LOG_FILE"; }
 print_warning() { echo -e "${YELLOW}[!] $1${NC}" | tee -a "$LOG_FILE"; }
 
-# Add these new functions
-install_dependencies() {
-    print_message "Installing dependencies..."
-    apt-get update
-    apt-get install -y \
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then 
+    print_error "Please run as root or with sudo"
+    exit 1
+fi
+
+# Initialize log file
+echo "----------------------------------------" >> "$LOG_FILE"
+echo "Script started at $(date)" >> "$LOG_FILE"
+
+# Function to check if WireGuard is installed
+check_wireguard() {
+    if [ -d "/opt/wireguard-server" ] && docker ps | grep -q wireguard; then
+        return 0 # Installed
+    else
+        return 1 # Not installed
+    fi
+}
+
+# Function for automated installation
+install_wireguard_auto() {
+    print_message "Starting automated WireGuard installation..."
+    
+    # Update system
+    print_message "Updating system packages..."
+    apt update -y && apt upgrade -y && apt autoremove -y
+    
+    # Install dependencies
+    print_message "Installing required packages..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
         apt-transport-https \
         ca-certificates \
         curl \
         gnupg-agent \
         software-properties-common
-}
-
-install_docker() {
+    
+    # Install Docker
     print_message "Installing Docker..."
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
     apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io
-}
-
-setup_wireguard() {
-    print_message "Setting up WireGuard..."
+    
+    # Install Docker Compose
+    print_message "Installing Docker Compose..."
+    curl -L "https://github.com/docker/compose/releases/download/1.26.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+    
+    # Create WireGuard directory
+    print_message "Setting up WireGuard directory..."
     mkdir -p /opt/wireguard-server
     
-    # Create docker-compose.yaml with automated settings
+    # Create docker-compose.yaml
+    print_message "Creating Docker Compose configuration..."
     cat > /opt/wireguard-server/docker-compose.yaml << EOL
 version: "3.8"
 services:
@@ -66,21 +95,125 @@ services:
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
 EOL
-
+    
+    # Start WireGuard
+    print_message "Starting WireGuard container..."
     cd /opt/wireguard-server
     docker-compose up -d
-}
-
-verify_installation() {
-    print_message "Verifying installation..."
+    
+    # Wait for container to start
+    print_message "Waiting for WireGuard to initialize..."
     sleep 10
+    
+    # Verify installation
     if docker ps | grep -q wireguard; then
-        print_message "WireGuard is running successfully"
+        print_message "WireGuard installation successful!"
         return 0
     else
-        print_error "WireGuard failed to start"
+        print_error "WireGuard installation failed!"
         return 1
     fi
+}
+
+
+# Function to install WireGuard
+install_wireguard() {
+    print_message "Starting WireGuard installation..."
+    
+    # Create new user
+    print_message "Creating new user..."
+    read -p "Enter username for new admin user: " NEW_USER
+    echo "Username set to: $NEW_USER" >> "$LOG_FILE"
+    
+    adduser $NEW_USER
+    usermod -aG sudo $NEW_USER
+    
+    # Update system
+    print_message "Updating system packages..."
+    apt update -y && apt upgrade -y && apt autoremove -y
+    
+    # Install dependencies
+    print_message "Installing required packages..."
+    apt-get install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+    
+    # Install Docker
+    print_message "Installing Docker..."
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io
+    
+    # Install Docker Compose
+    print_message "Installing Docker Compose..."
+    curl -L "https://github.com/docker/compose/releases/download/1.26.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
+    
+    # Add user to docker group
+    usermod -aG docker $NEW_USER
+    
+    # Get number of peers
+    read -p "How many peer configurations do you want to create? " PEER_COUNT
+    echo "Number of peers set to: $PEER_COUNT" >> "$LOG_FILE"
+    
+    # Get Server IP
+    SERVER_IP=$(curl -s ifconfig.me)
+    echo "Server IP detected as: $SERVER_IP" >> "$LOG_FILE"
+    
+    # Create WireGuard directory
+    print_message "Setting up WireGuard directory..."
+    mkdir -p /opt/wireguard-server
+    chown $NEW_USER:$NEW_USER /opt/wireguard-server
+    
+    # Create docker-compose.yaml
+    print_message "Creating Docker Compose configuration..."
+    cat > /opt/wireguard-server/docker-compose.yaml << EOL
+version: "3.8"
+services:
+  wireguard:
+    container_name: wireguard
+    image: linuxserver/wireguard
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=${SERVER_IP}
+      - SERVERPORT=51820
+      - PEERS=${PEER_COUNT}
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+    ports:
+      - 51820:51820/udp
+    volumes:
+      - /opt/wireguard-server/config:/config
+      - /lib/modules:/lib/modules
+    restart: always
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+EOL
+    
+    # Start WireGuard
+    print_message "Starting WireGuard container..."
+    cd /opt/wireguard-server
+    docker-compose up -d
+    
+    # Wait for container to start and configs to generate
+    print_message "Waiting for WireGuard to initialize..."
+    sleep 10
+    
+    # Show peer configurations
+    print_message "Peer configurations:"
+    for i in $(seq 1 $PEER_COUNT); do
+        echo "----------------------------------------" >> "$LOG_FILE"
+        echo "Configuration for peer$i:" >> "$LOG_FILE"
+        cat "/opt/wireguard-server/config/peer$i/peer$i.conf" >> "$LOG_FILE"
+        print_message "Peer $i configuration has been saved to the log file"
+        print_message "Configuration for peer$i:"
+        cat "/opt/wireguard-server/config/peer$i/peer$i.conf"
+    done
+    
+    print_message "Installation complete! All configurations have been saved to $LOG_FILE"
 }
 
 # Function to add new peer
