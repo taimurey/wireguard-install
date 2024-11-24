@@ -52,62 +52,75 @@ jobs:
       - name: Test WireGuard Installation (Debian/Ubuntu)
         if: contains(matrix.container, 'ubuntu') || contains(matrix.container, 'debian')
         run: |
-          # Create a Docker network for DinD
-          docker network create wireguard-test
-
-          # Start DinD container
-          docker run -d --privileged --name dind \
-            --network wireguard-test \
+          # Create test container
+          docker run -d --privileged \
+            --name test-container \
             -v ${{ github.workspace }}:/workspace \
-            docker:dind
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ${{ matrix.container }}
 
-          # Wait for Docker to be ready in DinD
-          sleep 10
+          # Install required packages
+          docker exec test-container bash -c '
+            apt-get update && \
+            DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              curl \
+              sudo \
+              systemd \
+              systemd-sysv \
+              git \
+              docker.io'
 
-          # Run test in the container
-          docker exec dind sh -c '
-            apk add --no-cache bash curl
-            cd /workspace
-            chmod +x wireguard-manager.sh
+          # Run installation
+          docker exec test-container bash -c '
+            cd /workspace && \
+            chmod +x wireguard-manager.sh && \
             ./wireguard-manager.sh auto_install=true'
+
+          # Verify WireGuard is running
+          docker exec test-container bash -c '
+            docker ps | grep -q wireguard && \
+            echo "WireGuard is running" && \
+            exit 0 || \
+            (echo "WireGuard failed to start" && exit 1)'
 
       - name: Test WireGuard Installation (Fedora)
         if: contains(matrix.container, 'fedora')
         run: |
-          # Create a Docker network for DinD
-          docker network create wireguard-test
-
-          # Start DinD container
-          docker run -d --privileged --name dind \
-            --network wireguard-test \
+          # Create test container
+          docker run -d --privileged \
+            --name test-container \
             -v ${{ github.workspace }}:/workspace \
-            docker:dind
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ${{ matrix.container }}
 
-          # Wait for Docker to be ready in DinD
-          sleep 10
+          # Install required packages
+          docker exec test-container bash -c '
+            dnf install -y curl sudo systemd systemd-sysv git docker'
 
-          # Run test in the container
-          docker exec dind sh -c '
-            apk add --no-cache bash curl
-            cd /workspace
-            chmod +x wireguard-manager.sh
+          # Run installation
+          docker exec test-container bash -c '
+            cd /workspace && \
+            chmod +x wireguard-manager.sh && \
             ./wireguard-manager.sh auto_install=true'
 
-      - name: Verify WireGuard Status
+          # Verify WireGuard is running
+          docker exec test-container bash -c '
+            docker ps | grep -q wireguard && \
+            echo "WireGuard is running" && \
+            exit 0 || \
+            (echo "WireGuard failed to start" && exit 1)'
+
+      - name: Display Docker Logs
+        if: always()
         run: |
-          docker exec dind sh -c '
-            if docker ps | grep -q wireguard; then
-              echo "WireGuard is running"
-              exit 0
-            else
-              echo "WireGuard is not running"
-              exit 1
-            fi'
+          echo "Docker containers:"
+          docker ps -a
+          echo "WireGuard container logs:"
+          docker exec test-container bash -c 'docker logs wireguard || true'
 
       - name: Cleanup
         if: always()
         run: |
-          docker stop dind || true
-          docker rm dind || true
-          docker network rm wireguard-test || true
+          docker stop test-container || true
+          docker rm test-container || true
           docker system prune -af
