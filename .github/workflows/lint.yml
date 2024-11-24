@@ -1,0 +1,33 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: error
+
+  shfmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shfmt
+        uses: luizm/action-sh-checker@master
+        env:
+          SHFMT_OPTS: -d -i 2 -ci -sr
+        with:
+          sh_checker_comment: false
+          sh_checker_shellcheck_disable: true
